@@ -18,52 +18,54 @@ rw_t *rw;
 void
 reader(void)
 {
-  while (1) {
-        // Entry section for readers
-        sem_wait(&mutex); // Acquire mutex to protect read_count
-        read_count++;
-        if (read_count == 1) { // If this is the first reader
-            sem_wait(&db); // Acquire db semaphore, blocking writers
-        }
-        sem_post(&mutex); // Release mutex
-
-        // Critical section: Reading the database
-        // ... (access_database() function) ...
-
-        // Exit section for readers
-        sem_wait(&mutex); // Acquire mutex to protect read_count
-        read_count--;
-        if (read_count == 0) { // If this is the last reader
-            sem_post(&db); // Release db semaphore, allowing writers
-        }
-        sem_post(&mutex); // Release mutex
-
-        // Non-critical section
-        // ... (non_access_database() function) ...
+  for (int i = 0; i < READER_ITERS; i++) {
+    // ENTRY section: readers coordinate via rw->mutex and rw->readercount
+    sem_wait(&rw->mutex);        // protect readercount
+    rw->readercount++;
+    if (rw->readercount == 1) {  // first reader blocks writers
+      sem_wait(&rw->wrt);        // rw->wrt == "db" semaphore
     }
-    return NULL;
+    sem_post(&rw->mutex);        // allow other readers to update readercount
+
+    // CRITICAL SECTION: reading the "database"
+    // you can logically "read" rw->value here if you want
+    // int v = rw->value;  // (optional; omit if you don't use v)
+
+    // EXIT section
+    sem_wait(&rw->mutex);        // protect readercount again
+    rw->readercount--;
+    if (rw->readercount == 0) {  // last reader lets writers proceed
+      sem_post(&rw->wrt);
+    }
+    sem_post(&rw->mutex);        // done updating readercount
+
+    // NON-CRITICAL SECTION can be empty for this assignment
+  }
+
+  // terminate reader child process
+  exit(0);
 }
 
 void
 writer(void)
 {
-  while (1) {
-        // Non-critical section
-        // ... (non_access_database() function) ...
+  for (int i = 0; i < WRITER_ITERS; i++) {
+    // NON-CRITICAL SECTION can be empty
 
-        // Entry section for writers
-        sem_wait(&db); // Acquire db semaphore for exclusive access
+    // ENTRY section: writers need exclusive access
+    sem_wait(&rw->wrt);    // same as db semaphore in the pseudocode
 
-        // Critical section: Writing to the database
-        // ... (access_database() function) ...
+    // CRITICAL SECTION: writing the "database"
+    rw->value++;           // update shared value
 
-        // Exit section for writers
-        sem_post(&db); // Release db semaphore
+    // EXIT section
+    sem_post(&rw->wrt);    // release exclusive access
 
-        // Non-critical section
-        // ... (non_access_database() function) ...
-    }
-    return NULL;
+    // NON-CRITICAL SECTION can be empty
+  }
+
+  // terminate writer child process
+  exit(0);
 }
 int
 main(int argc, char *argv[])
