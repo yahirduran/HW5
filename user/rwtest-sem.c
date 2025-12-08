@@ -19,38 +19,27 @@ void
 reader(void)
 {
   for (int i = 0; i < READER_ITERS; i++) {
-    // 1. Acquire mutex to safely update readercount (Entry Section)
     sem_wait(&rw->mutex);
-
-    // Increment reader count
     rw->readercount++;
-
-    // 2. If this is the first reader, acquire the writer lock (wrt)
-    //    This blocks any concurrent writers.
+    
+    // if this is the first reader, acquire the writer lock
     if (rw->readercount == 1) {
       sem_wait(&rw->wrt);
     }
 
-    // Release mutex
+    // release mutex
     sem_post(&rw->mutex);
-
-    // Critical Section: Reading (multiple readers allowed)
-    // int val = rw->value; // Read the value, though just reading without storing is fine
-    // printf("Reader %d read value %d\n", getpid(), rw->value);
-
-    // 3. Acquire mutex to safely update readercount (Exit Section)
+    // acquire mutex to update readercount
     sem_wait(&rw->mutex);
 
-    // Decrement reader count
     rw->readercount--;
 
-    // 4. If this is the last reader, release the writer lock (wrt)
-    //    This allows a waiting writer to proceed.
+    // release the writer lock release writer lock if this is the last reader
     if (rw->readercount == 0) {
       sem_post(&rw->wrt);
     }
 
-    // Release mutex
+    // release mutex
     sem_post(&rw->mutex);
   }
   exit(0);
@@ -60,16 +49,10 @@ void
 writer(void)
 {
   for (int i = 0; i < WRITER_ITERS; i++) {
-    // 1. Acquire writer lock (wrt) (Entry Section)
-    // This blocks other writers and readers (if a reader has not yet acquired it).
     sem_wait(&rw->wrt);
-
-    // Critical Section: Writing (exclusive access)
-    // 2. Increment the shared value by 1
     rw->value++;
-    // printf("Writer %d wrote value %d\n", getpid(), rw->value);
 
-    // 3. Release writer lock (wrt) (Exit Section)
+    // release writer lock
     sem_post(&rw->wrt);
   }
   exit(0);
