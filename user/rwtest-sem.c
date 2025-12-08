@@ -19,30 +19,20 @@ void
 reader(void)
 {
   for (int i = 0; i < READER_ITERS; i++) {
-    // ENTRY section: readers coordinate via rw->mutex and rw->readercount
     sem_wait(&rw->mutex);        // protect readercount
     rw->readercount++;
     if (rw->readercount == 1) {  // first reader blocks writers
-      sem_wait(&rw->wrt);        // rw->wrt == "db" semaphore
+      sem_wait(&rw->wrt); 
     }
+    
     sem_post(&rw->mutex);        // allow other readers to update readercount
-
-    // CRITICAL SECTION: reading the "database"
-    // you can logically "read" rw->value here if you want
-    // int v = rw->value;  // (optional; omit if you don't use v)
-
-    // EXIT section
     sem_wait(&rw->mutex);        // protect readercount again
     rw->readercount--;
-    if (rw->readercount == 0) {  // last reader lets writers proceed
+    if (rw->readercount == 0) {  // last reader lets writer proceed
       sem_post(&rw->wrt);
     }
-    sem_post(&rw->mutex);        // done updating readercount
-
-    // NON-CRITICAL SECTION can be empty for this assignment
+    sem_post(&rw->mutex);        // finished updating
   }
-
-  // terminate reader child process
   exit(0);
 }
 
@@ -50,23 +40,13 @@ void
 writer(void)
 {
   for (int i = 0; i < WRITER_ITERS; i++) {
-    // NON-CRITICAL SECTION can be empty
-
-    // ENTRY section: writers need exclusive access
-    sem_wait(&rw->wrt);    // same as db semaphore in the pseudocode
-
-    // CRITICAL SECTION: writing the "database"
+    sem_wait(&rw->wrt);
     rw->value++;           // update shared value
-
-    // EXIT section
     sem_post(&rw->wrt);    // release exclusive access
-
-    // NON-CRITICAL SECTION can be empty
   }
-
-  // terminate writer child process
   exit(0);
 }
+
 int
 main(int argc, char *argv[])
 {
