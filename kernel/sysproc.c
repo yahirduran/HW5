@@ -116,142 +116,93 @@ sys_freepmem(void)
 
 extern struct semtab semtable;
 
-// int sem_init(sem_t *sem, int pshared, unsigned int value);
-uint64
-sys_sem_init(void)
-{
+uint64 sys_sem_init(void) {
   uint64 sem_addr;
   int pshared;
   int value;
   
-  // Get arguments from user space
   if (argaddr(0, &sem_addr) < 0 || argint(1, &pshared) < 0 || argint(2, &value) < 0)
     return -1;
 
-  // For simplicity, we ignore pshared (assumed 1 for process shared)
   if (value < 0)
     return -1; // POSIX compliance check
 
-  // 1. Allocate a new semaphore entry in the kernel table
   int semid = semalloc();
   if (semid < 0) {
-    return -1; // Allocation failed (table full)
+    return -1;
   }
 
-  // 2. Initialize the allocated semaphore's state
   struct semaphore *s = &semtable.sem[semid];
   acquire(&s->lock); // Lock the specific semaphore entry
   s->count = value;
   release(&s->lock);
 
-  // 3. Copy the index (semid) back to the user's sem_t location [cite: 65]
   if (copyout(myproc()->pagetable, sem_addr, (char *)&semid, sizeof(semid)) < 0) {
-    // If copyout fails, deallocate the semaphore
     semdealloc(semid);
     return -1;
   }
-
-  return 0; // Success
+  return 0;
 }
 
-// sys_sem_destroy(sem_t *sem)
-uint64
-sys_sem_destroy(void)
-{
+uint64 sys_sem_destroy(void) {
   uint64 sem_addr;
   int semid;
-
-  // Get user address of sem_t
   if (argaddr(0, &sem_addr) < 0)
     return -1;
   
-  // 1. Copy the semaphore index (semid) from user space [cite: 65]
   if (copyin(myproc()->pagetable, (char *)&semid, sem_addr, sizeof(semid)) < 0) {
     return -1;
   }
-
-  // Check if semid is valid
   if (semid < 0 || semid >= NSEM || semtable.sem[semid].valid == 0) {
     return -1;
   }
-
-  // 2. Wake up all processes potentially sleeping on this semaphore
-  // This is required for POSIX compliance, though in xv6 you may simply deallocate.
-  // wakeup(&semtable.sem[semid]); // Assuming a call to wakeup()
-
-  // 3. Deallocate the semaphore entry in the kernel table
   semdealloc(semid);
 
-  return 0; // Success
+  return 0;
 }
 
-// sys_sem_wait(sem_t *sem) (P operation, decrement)
-uint64
-sys_sem_wait(void)
-{
+uint64 sys_sem_wait(void) {
   uint64 sem_addr;
   int semid;
-
-  // Get user address of sem_t
   if (argaddr(0, &sem_addr) < 0)
     return -1;
 
-  // 1. Copy the semaphore index (semid) from user space [cite: 65]
   if (copyin(myproc()->pagetable, (char *)&semid, sem_addr, sizeof(semid)) < 0) {
     return -1;
   }
 
-  // Check if semid is valid
+  if (semid < 0 || semid >= NSEM || semtable.sem[semid].valid == 0) {
+    return -1;
+  }
+  struct semaphore *s = &semtable.sem[semid];
+  acquire(&s->lock);
+  while (s->count <= 0) {
+    sleep(s, &s->lock); 
+  }
+  
+  s->count--;
+  release(&s->lock);
+  return 0;
+}
+
+uint64 sys_sem_post(void) {
+  uint64 sem_addr;
+  int semid;
+  if (argaddr(0, &sem_addr) < 0)
+    return -1;
+
+  if (copyin(myproc()->pagetable, (char *)&semid, sem_addr, sizeof(semid)) < 0) {
+    return -1;
+  }
+  
   if (semid < 0 || semid >= NSEM || semtable.sem[semid].valid == 0) {
     return -1;
   }
   
   struct semaphore *s = &semtable.sem[semid];
-
   acquire(&s->lock);
-  while (s->count <= 0) {
-    // Wait/Sleep on the semaphore's address until count > 0 (wait until resource is available)
-    // sleep(channel, lock) is the xv6 pattern for waiting.
-    sleep(s, &s->lock); 
-  }
-
-  // Decrement the count (Acquire the resource)
-  s->count--;
-  release(&s->lock);
-
-  return 0; // Success
-}
-
-// sys_sem_post(sem_t *sem) (V operation, increment)
-uint64
-sys_sem_post(void)
-{
-  uint64 sem_addr;
-  int semid;
-
-  // Get user address of sem_t
-  if (argaddr(0, &sem_addr) < 0)
-    return -1;
-
-  // 1. Copy the semaphore index (semid) from user space [cite: 65]
-  if (copyin(myproc()->pagetable, (char *)&semid, sem_addr, sizeof(semid)) < 0) {
-    return -1;
-  }
-
-  // Check if semid is valid
-  if (semid < 0 || semid >= NSEM || semtable.sem[semid].valid == 0) {
-    return -1;
-  }
-
-  struct semaphore *s = &semtable.sem[semid];
-
-  acquire(&s->lock);
-  // Increment the count (Release the resource)
   s->count++;
-
-  // Wake up a waiting process (if any)
   wakeup(s);
-
   release(&s->lock);
   
   return 0; // Success
