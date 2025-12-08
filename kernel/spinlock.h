@@ -7,14 +7,14 @@ struct spinlock {
   char *name;        // Name of lock.
   struct cpu *cpu;   // The cpu holding the lock.
 };
-// Counting semaphore
+
 struct semaphore {
-  struct spinlock lock;  // semaphore lock
-  int count;             // semaphore value
-  int valid;             // 1 if this entry is in use
+  struct spinlock lock;  
+  int count;             
+  int valid;             // if the entry is in use, 1
 };
 
-// OS semaphore table type
+// semaphore table
 struct semtab {
   struct spinlock lock;        // lock protecting the table
   struct semaphore sem[NSEM];  // fixed-size array of semaphores
