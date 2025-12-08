@@ -18,63 +18,53 @@ rw_t *rw;
 void
 reader(void)
 {
-  for (int i = 0; i < READER_ITERS; i++) {
-    // 1. Acquire mutex to safely update readercount (Entry Section)
-    sem_wait(&rw->mutex);
+  while (1) {
+        // Entry section for readers
+        sem_wait(&mutex); // Acquire mutex to protect read_count
+        read_count++;
+        if (read_count == 1) { // If this is the first reader
+            sem_wait(&db); // Acquire db semaphore, blocking writers
+        }
+        sem_post(&mutex); // Release mutex
 
-    // Increment reader count
-    rw->readercount++;
+        // Critical section: Reading the database
+        // ... (access_database() function) ...
 
-    // 2. If this is the first reader, acquire the writer lock (wrt)
-    //    This blocks any concurrent writers.
-    if (rw->readercount == 1) {
-      sem_wait(&rw->wrt);
+        // Exit section for readers
+        sem_wait(&mutex); // Acquire mutex to protect read_count
+        read_count--;
+        if (read_count == 0) { // If this is the last reader
+            sem_post(&db); // Release db semaphore, allowing writers
+        }
+        sem_post(&mutex); // Release mutex
+
+        // Non-critical section
+        // ... (non_access_database() function) ...
     }
-
-    // Release mutex
-    sem_post(&rw->mutex);
-
-    // Critical Section: Reading (multiple readers allowed)
-    // int val = rw->value; // Read the value, though just reading without storing is fine
-    // printf("Reader %d read value %d\n", getpid(), rw->value);
-
-    // 3. Acquire mutex to safely update readercount (Exit Section)
-    sem_wait(&rw->mutex);
-
-    // Decrement reader count
-    rw->readercount--;
-
-    // 4. If this is the last reader, release the writer lock (wrt)
-    //    This allows a waiting writer to proceed.
-    if (rw->readercount == 0) {
-      sem_post(&rw->wrt);
-    }
-
-    // Release mutex
-    sem_post(&rw->mutex);
-  }
-  exit(0);
+    return NULL;
 }
 
 void
 writer(void)
 {
-  for (int i = 0; i < WRITER_ITERS; i++) {
-    // 1. Acquire writer lock (wrt) (Entry Section)
-    // This blocks other writers and readers (if a reader has not yet acquired it).
-    sem_wait(&rw->wrt);
+  while (1) {
+        // Non-critical section
+        // ... (non_access_database() function) ...
 
-    // Critical Section: Writing (exclusive access)
-    // 2. Increment the shared value by 1
-    rw->value++;
-    // printf("Writer %d wrote value %d\n", getpid(), rw->value);
+        // Entry section for writers
+        sem_wait(&db); // Acquire db semaphore for exclusive access
 
-    // 3. Release writer lock (wrt) (Exit Section)
-    sem_post(&rw->wrt);
-  }
-  exit(0);
+        // Critical section: Writing to the database
+        // ... (access_database() function) ...
+
+        // Exit section for writers
+        sem_post(&db); // Release db semaphore
+
+        // Non-critical section
+        // ... (non_access_database() function) ...
+    }
+    return NULL;
 }
-
 int
 main(int argc, char *argv[])
 {
