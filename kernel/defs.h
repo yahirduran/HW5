@@ -193,7 +193,7 @@ void            virtio_disk_intr(void);
 
 // semaphore.c
 void            seminit(void);
-int             semalloc(int initval);
+int             semalloc(void);
 void            semdealloc(int id);
 extern struct semtab semtable;
 // number of elements in fixed-size array
