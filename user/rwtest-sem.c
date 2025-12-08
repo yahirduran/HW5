@@ -19,19 +19,39 @@ void
 reader(void)
 {
   for (int i = 0; i < READER_ITERS; i++) {
-    sem_wait(&rw->mutex);        // protect readercount
+    // 1. Acquire mutex to safely update readercount (Entry Section)
+    sem_wait(&rw->mutex);
+
+    // Increment reader count
     rw->readercount++;
-    if (rw->readercount == 1) {  // first reader blocks writers
-      sem_wait(&rw->wrt); 
+
+    // 2. If this is the first reader, acquire the writer lock (wrt)
+    //    This blocks any concurrent writers.
+    if (rw->readercount == 1) {
+      sem_wait(&rw->wrt);
     }
-    
-    sem_post(&rw->mutex);        // allow other readers to update readercount
-    sem_wait(&rw->mutex);        // protect readercount again
+
+    // Release mutex
+    sem_post(&rw->mutex);
+
+    // Critical Section: Reading (multiple readers allowed)
+    // int val = rw->value; // Read the value, though just reading without storing is fine
+    // printf("Reader %d read value %d\n", getpid(), rw->value);
+
+    // 3. Acquire mutex to safely update readercount (Exit Section)
+    sem_wait(&rw->mutex);
+
+    // Decrement reader count
     rw->readercount--;
-    if (rw->readercount == 0) {  // last reader lets writer proceed
+
+    // 4. If this is the last reader, release the writer lock (wrt)
+    //    This allows a waiting writer to proceed.
+    if (rw->readercount == 0) {
       sem_post(&rw->wrt);
     }
-    sem_post(&rw->mutex);        // finished updating
+
+    // Release mutex
+    sem_post(&rw->mutex);
   }
   exit(0);
 }
@@ -40,9 +60,17 @@ void
 writer(void)
 {
   for (int i = 0; i < WRITER_ITERS; i++) {
+    // 1. Acquire writer lock (wrt) (Entry Section)
+    // This blocks other writers and readers (if a reader has not yet acquired it).
     sem_wait(&rw->wrt);
-    rw->value++;           // update shared value
-    sem_post(&rw->wrt);    // release exclusive access
+
+    // Critical Section: Writing (exclusive access)
+    // 2. Increment the shared value by 1
+    rw->value++;
+    // printf("Writer %d wrote value %d\n", getpid(), rw->value);
+
+    // 3. Release writer lock (wrt) (Exit Section)
+    sem_post(&rw->wrt);
   }
   exit(0);
 }
