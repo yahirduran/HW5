@@ -18,49 +18,60 @@ rw_t *rw;
 void
 reader(void)
 {
-  // simple debug so you *know* a reader started
-  // (you can delete this later)
-  // printf("reader: pid %d starting\n", getpid());
-
   for (int i = 0; i < READER_ITERS; i++) {
-    // ENTRY SECTION
+    // 1. Acquire mutex to safely update readercount (Entry Section)
     sem_wait(&rw->mutex);
+
+    // Increment reader count
     rw->readercount++;
+
+    // 2. If this is the first reader, acquire the writer lock (wrt)
+    //    This blocks any concurrent writers.
     if (rw->readercount == 1) {
-      // first reader blocks writers
       sem_wait(&rw->wrt);
     }
+
+    // Release mutex
     sem_post(&rw->mutex);
 
-    // CRITICAL SECTION: logically read rw->value
-    // (we don't store it anywhere; only synchronization matters)
-    // int v = rw->value;
+    // Critical Section: Reading (multiple readers allowed)
+    // int val = rw->value; // Read the value, though just reading without storing is fine
+    // printf("Reader %d read value %d\n", getpid(), rw->value);
 
-    // EXIT SECTION
+    // 3. Acquire mutex to safely update readercount (Exit Section)
     sem_wait(&rw->mutex);
+
+    // Decrement reader count
     rw->readercount--;
+
+    // 4. If this is the last reader, release the writer lock (wrt)
+    //    This allows a waiting writer to proceed.
     if (rw->readercount == 0) {
-      // last reader lets writers proceed
       sem_post(&rw->wrt);
     }
+
+    // Release mutex
     sem_post(&rw->mutex);
   }
-
   exit(0);
 }
 
 void
 writer(void)
 {
-  // debug start
-  // printf("writer: pid %d starting\n", getpid());
-
   for (int i = 0; i < WRITER_ITERS; i++) {
-    sem_wait(&rw->wrt);   // exclusive access
-    rw->value++;          // update shared value
-    sem_post(&rw->wrt);   // release
-  }
+    // 1. Acquire writer lock (wrt) (Entry Section)
+    // This blocks other writers and readers (if a reader has not yet acquired it).
+    sem_wait(&rw->wrt);
 
+    // Critical Section: Writing (exclusive access)
+    // 2. Increment the shared value by 1
+    rw->value++;
+    // printf("Writer %d wrote value %d\n", getpid(), rw->value);
+
+    // 3. Release writer lock (wrt) (Exit Section)
+    sem_post(&rw->wrt);
+  }
   exit(0);
 }
 
@@ -74,11 +85,7 @@ main(int argc, char *argv[])
 
   int nreaders = atoi(argv[1]);
   int nwriters = atoi(argv[2]);
-
-  // quick debug so you know main actually runs
-  // (if you never see this line, program never starts / crashes early)
-  printf("rw-sem: starting with %d readers, %d writers\n",
-         nreaders, nwriters);
+  int i;
 
   rw = (rw_t *) mmap(NULL, sizeof(rw_t),
                      PROT_READ | PROT_WRITE,
@@ -95,29 +102,21 @@ main(int argc, char *argv[])
   sem_init(&rw->wrt,   1, 1);
 
   // fork readers
-  for (int i = 0; i < nreaders; i++) {
-    int pid = fork();
-    if (pid == 0) {
+  for (i = 0; i < nreaders; i++) {
+    if (!fork()) {
       reader();
-    } else if (pid < 0) {
-      printf("rw-sem: fork reader failed\n");
-      exit(1);
     }
   }
 
   // fork writers
-  for (int i = 0; i < nwriters; i++) {
-    int pid = fork();
-    if (pid == 0) {
+  for (i = 0; i < nwriters; i++) {
+    if (!fork()) {
       writer();
-    } else if (pid < 0) {
-      printf("rw-sem: fork writer failed\n");
-      exit(1);
     }
   }
 
   // wait for all children
-  for (int i = 0; i < nreaders + nwriters; i++)
+  for (i = 0; i < nreaders + nwriters; i++)
     wait(0);
 
   // check final value
